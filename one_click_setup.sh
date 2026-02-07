@@ -4,6 +4,9 @@ set -euo pipefail
 LRZSZ_RPM_URL="https://rpmfind.net/linux/centos-stream/9-stream/BaseOS/x86_64/os/Packages/lrzsz-0.12.20-55.el9.x86_64.rpm"
 SWAPFILE="/swapfile"
 SWAP_SIZE_MB=4096
+AMAZON_NTP_SERVER="169.254.169.123"
+AMAZON_NTP_FQDN="time.aws.com"
+CRON_TAG="# one_click_setup_time_sync"
 
 log() {
   echo "[$(date '+%F %T')] $*"
@@ -28,12 +31,12 @@ detect_pkg_mgr() {
 }
 
 install_base_packages() {
-  log "1/4 安装基础包"
+  log "1/5 安装基础包"
   "${PKG_MGR}" install -y gcc gcc-c++ autoconf automake wget bzip2 telnet git npm screen
 }
 
 install_lrzsz() {
-  log "2/4 安装 lrzsz"
+  log "2/5 安装 lrzsz"
   local rpm_file
   rpm_file="/tmp/$(basename "${LRZSZ_RPM_URL}")"
 
@@ -47,13 +50,13 @@ install_lrzsz() {
 }
 
 install_python_and_pip_packages() {
-  log "3/4 安装 Python 与 pip 包"
+  log "3/5 安装 Python 与 pip 包"
   "${PKG_MGR}" install -y python3 python3-pip python3-devel
   python3 -m pip install httpx h2
 }
 
 ensure_swap_persistent() {
-  log "4/4 增加 4G 交换分区并持久化"
+  log "4/5 增加 4G 交换分区并持久化"
 
   if swapon --show | awk '{print $1}' | grep -qx "${SWAPFILE}"; then
     log "${SWAPFILE} 已启用，检查持久化配置。"
@@ -87,6 +90,45 @@ ensure_swap_persistent() {
   free -h || true
 }
 
+configure_time_sync() {
+  log "5/5 配置时间同步（Amazon NTP + 每小时第5分钟）"
+  local chrony_conf="/etc/chrony.conf"
+  local chronyc_bin
+  local cron_line
+
+  "${PKG_MGR}" install -y chrony
+
+  if [[ -f "${chrony_conf}" ]]; then
+    cp -n "${chrony_conf}" "${chrony_conf}.bak" || true
+    sed -i '/^[[:space:]]*server[[:space:]]\+/d' "${chrony_conf}"
+    sed -i '/^[[:space:]]*pool[[:space:]]\+/d' "${chrony_conf}"
+  else
+    touch "${chrony_conf}"
+  fi
+
+  {
+    echo "server ${AMAZON_NTP_SERVER} prefer iburst"
+    echo "server ${AMAZON_NTP_FQDN} iburst"
+  } >> "${chrony_conf}"
+
+  systemctl enable --now chronyd
+  systemctl restart chronyd
+
+  chronyc_bin="$(command -v chronyc || true)"
+  if [[ -z "${chronyc_bin}" ]]; then
+    chronyc_bin="/usr/bin/chronyc"
+  fi
+
+  cron_line="5 * * * * ${chronyc_bin} -a makestep >/dev/null 2>&1 ${CRON_TAG}"
+  (
+    crontab -l 2>/dev/null | grep -vF "${CRON_TAG}" || true
+    echo "${cron_line}"
+  ) | crontab -
+
+  "${chronyc_bin}" sources || true
+  "${chronyc_bin}" tracking || true
+}
+
 main() {
   require_root
   detect_pkg_mgr
@@ -94,6 +136,7 @@ main() {
   install_lrzsz
   install_python_and_pip_packages
   ensure_swap_persistent
+  configure_time_sync
   log "全部完成。"
 }
 
