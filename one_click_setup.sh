@@ -49,7 +49,6 @@ install_lrzsz() {
 install_python_and_pip_packages() {
   log "3/4 安装 Python 与 pip 包"
   "${PKG_MGR}" install -y python3 python3-pip python3-devel
-  python3 -m pip install --upgrade pip
   python3 -m pip install httpx h2
 }
 
