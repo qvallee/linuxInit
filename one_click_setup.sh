@@ -97,6 +97,7 @@ configure_time_sync() {
   local cron_line
 
   "${PKG_MGR}" install -y chrony
+  "${PKG_MGR}" install -y cronie
 
   if [[ -f "${chrony_conf}" ]]; then
     cp -n "${chrony_conf}" "${chrony_conf}.bak" || true
@@ -113,10 +114,16 @@ configure_time_sync() {
 
   systemctl enable --now chronyd
   systemctl restart chronyd
+  systemctl enable --now crond || true
 
   chronyc_bin="$(command -v chronyc || true)"
   if [[ -z "${chronyc_bin}" ]]; then
     chronyc_bin="/usr/bin/chronyc"
+  fi
+
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "未找到 crontab 命令（cronie 未正确安装），无法写入定时任务。"
+    exit 1
   fi
 
   cron_line="5 * * * * ${chronyc_bin} -a makestep >/dev/null 2>&1 ${CRON_TAG}"
