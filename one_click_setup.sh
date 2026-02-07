@@ -32,7 +32,7 @@ detect_pkg_mgr() {
 
 install_base_packages() {
   log "1/5 安装基础包"
-  "${PKG_MGR}" install -y gcc gcc-c++ autoconf automake wget bzip2 telnet git npm screen
+  "${PKG_MGR}" install -y gcc gcc-c++ autoconf automake wget bzip2 telnet git npm screen cronie crontabs
 }
 
 install_lrzsz() {
